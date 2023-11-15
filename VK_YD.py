@@ -1,9 +1,9 @@
 import requests
 from tqdm import tqdm
-from datetime import date
+from datetime import datetime
 
-token_yandex = ''
 token_vk = ''
+token_yandex = ''
 users_id = ''
 count = 5
 name_folder = 'vk_photo'
@@ -24,7 +24,7 @@ class VK:
         url = f'https://api.vk.com/method/utils.resolveScreenName?screen_name={id}&v=5.131&access_token={self.token}'
         response = requests.get(url)
 
-        if response.status_code == 200:
+        if response.status_code == 200: 
             data = response.json()
             if 'response' in data:
                 real_id = data['response']['object_id']
@@ -42,7 +42,7 @@ class VK:
        response = requests.get(url, params={**self.params, **params})
        return response.json()
    
-   def filter_data_photo(self,album_id ='profile',count = 5):
+   def filter_data_photo(self,album_id,count):
         self.album_id = album_id
         self.count = count
         url = 'https://api.vk.com/method/photos.get'
@@ -53,31 +53,37 @@ class VK:
 		'photo_sizes': 0,
         'rev' : 1
         }
+
         responce = requests.get(url, params={**self.params, **params})
-        if responce.status_code == 200:
-            responce_json =  responce.json()
-            if 'response' in responce_json:
-                if len(responce_json['response']['items'])> 0 :
-                    my_list = []
-                    for i in responce_json['response']['items']:
-                        w = 0
-                        h = 0
-                        my_dict = {}
-                        for d in i['sizes']:
-                            if d['width'] > w and d['height'] > h:
-                                h = d['height']
-                                w = d['width']
-                                my_dict['file_name'] = str(i['likes']['count'])+'_' +str(i['date'])+'.jpg'
-                                my_dict['size'] = d['type']
-                                my_dict['url'] = d['url']
-                        my_list.append(my_dict)
-                    return my_list
-                else:
-                    return "Альбом пуст"
-            else:
-                return 'Доступ к Альбому запрещен'
-        else:
+        responce_json =  responce.json()
+        my_list = []
+
+        if responce.status_code != 200:
             return (f'Ошибка при запросе к VK API. Код состояния: {responce.status_code}')
+        
+        if 'response' not in responce_json: 
+            return "Доступ к альбому запрещен"
+        
+        if len(responce_json['response']['items']) ==  0 :
+            return 'Альбом пуст'
+        print(responce_json)
+        for i in responce_json['response']['items']:
+            w = 0
+            h = 0
+            my_dict = {}
+            for d in i['sizes']:
+                if d['width'] >= w and d['height'] >= h:
+                    h = d['height']
+                    w = d['width']
+                    my_dict['file_name'] = str(i['likes']['count'])+'.jpg'
+                    my_dict['size'] = d['type']
+                    my_dict['url'] = d['url']
+
+            for p in my_list:
+                if p['file_name'] == my_dict['file_name']:
+                    my_dict['file_name'] = str(i['likes']['count'])+'_' +str(i['date'])+'.jpg'
+            my_list.append(my_dict)
+        return my_list
 class YandexDisk:
     url = "https://cloud-api.yandex.net/v1/disk/resources"
 
@@ -99,10 +105,11 @@ class YandexDisk:
             print(f"Папка '{name_folder}' создана на Яндекc.Диск")
 
         elif response.status_code == 409:
-            return (f"Папка '{name_folder}' уже есть на вашем Яндекc.Диске")
+            return (f"Папка '{name_folder}' уже есть на вашем Яндекc.Диске")\
+            
             
         else:
-            print(response.status_code)
+            return(response.status_code)
             
     def delete_folder(self,name_folder):
         headers = {
@@ -122,34 +129,39 @@ class YandexDisk:
             print(f"Ошибка на Yandex API :{response.status_code}")
         
     def upload_photo_by_url(self,data_photos,folder_name = '' ):
-        if folder_name == '':
-            pass
-        else:
-            folder_name  = folder_name+"_"+str(date.today())
-            self.create_folder(folder_name)
-
-        for file in tqdm(data_photos):
-            file_name = file['file_name']
-            url_photo = file['url']
-            url = f'https://cloud-api.yandex.net/v1/disk/resources/upload?path={folder_name}/{file_name}'
-            headers = {
-                    'Authorization': f'OAuth {self.access_token}'
-                }       
-            response = requests.get(url, headers=headers)
-            data = response.json()
-            if 'href' in data:
-                upload_url = data['href']
-                photo_data = requests.get(url_photo).content
-                upload_response = requests.put(upload_url, data=photo_data)
-                if upload_response.status_code == 201:
-                    continue
-                else:
-                    print(f'Ошибка при загрузке фото. Код состояния: {upload_response.status_code}')
+        if type(data_photos) == list:
+            current_datetime = datetime.now()
+            if folder_name == '':
+                pass
             else:
-                print(f'Ошибка при получении URL для загрузки. Код состояния: {response.status_code}')
-                print(data)
-        print(f'Все фото загружены в папку "{folder_name}"')
-
+                folder_name  = folder_name+"_"+str(current_datetime.date())+"_"+str(current_datetime.hour)+"_"+str(current_datetime.minute)
+                self.create_folder(folder_name)
+            for file in tqdm(data_photos):
+                file_name = file['file_name']
+                url_photo = file['url']
+                url = f'https://cloud-api.yandex.net/v1/disk/resources/upload?path={folder_name}/{file_name}'
+                headers = {
+                        'Authorization': f'OAuth {self.access_token}'
+                    }       
+                response = requests.get(url, headers=headers)
+                data = response.json()
+                if 'href' in data:
+                    upload_url = data['href']
+                    photo_data = requests.get(url_photo).content
+                    upload_response = requests.put(upload_url, data=photo_data)
+                    if upload_response.status_code == 201:
+                        continue
+                    else:
+                        print(f'Ошибка при загрузке фото. Код состояния: {upload_response.status_code}')
+                else:
+                    print(f' Ошибка при получении URL для загрузки. Код состояния: {response.status_code}')
+                    print(data['message'])
+                    return
+            print(f'Все фото загружены в папку "{folder_name}"')
+        else:
+            print (data_photos)
+            return 
+    
 def work(token_vk,yandex_token,users_id,name_folder,count,vk_album):
     vk = VK(token_vk, users_id)  # создаем класс вк
     yandex = YandexDisk(yandex_token) # создаем класс яндекса
